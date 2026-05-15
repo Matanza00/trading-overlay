@@ -1,77 +1,88 @@
 import "~src/styles/tailwind.css"
 
-import { useEffect, useMemo, useState } from "react"
-import type { PlasmoCSConfig } from "plasmo"
-
-import { OverlayCanvas } from "~src/components/canvas/overlay-canvas"
-import { Toolbar } from "~src/components/toolbar/toolbar"
-import { OverlayManager } from "~src/components/tools/overlay-manager"
-import { useKeyboardShortcuts } from "~src/hooks/use-keyboard-shortcuts"
-import { usePersistence } from "~src/hooks/use-persistence"
-import type { GraphCandidate } from "~src/types/graph"
+import { useEffect, useState } from "react"
+import type { PlasmoCSConfig, PlasmoGetRootContainer } from "plasmo"
 
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"],
-  all_frames: true
+  run_at: "document_idle",
+  all_frames: false
 }
 
-const manager = new OverlayManager()
+export const getRootContainer: PlasmoGetRootContainer = async () => {
+  console.log("[universal-overlay] extension loaded")
 
-const Overlay = () => {
-  const [candidates, setCandidates] = useState<GraphCandidate[]>([])
-  const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null)
+  const existing = document.getElementById("universal-overlay-root")
+  if (existing) {
+    console.log("[universal-overlay] overlay mounted (existing root)")
+    return existing
+  }
 
-  const activeCandidate = useMemo(
-    () => candidates.find((candidate) => candidate.id === activeCandidateId) || null,
-    [activeCandidateId, candidates]
-  )
+  const root = document.createElement("div")
+  root.id = "universal-overlay-root"
 
-  usePersistence(activeCandidate?.selectorHint || "inactive")
-  useKeyboardShortcuts()
+  try {
+    document.documentElement.appendChild(root)
+    console.log("[universal-overlay] overlay mounted")
+    return root
+  } catch (error) {
+    console.error("[universal-overlay] failed to append root to documentElement", error)
+    throw error
+  }
+}
+
+const DebugOverlay = () => {
+  const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight })
 
   useEffect(() => {
-    const runScan = () => setCandidates(manager.listCandidates())
-    runScan()
-    const iv = window.setInterval(runScan, 1500)
-    return () => window.clearInterval(iv)
+    console.log("[universal-overlay] react rendered")
+    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight })
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
   }, [])
 
   return (
-    <>
-      {candidates.map((candidate) => (
-        <button
-          key={candidate.id}
-          type="button"
-          className="fixed z-[999998] rounded bg-zinc-900/90 px-2 py-1 text-xs text-white"
-          style={{ left: candidate.rect.left + 8, top: Math.max(8, candidate.rect.top - 28) }}
-          onClick={() => setActiveCandidateId(candidate.id)}>
-          Enable Overlay
-        </button>
-      ))}
-
-      {activeCandidate && (
-        <div
-          style={{
-            position: "fixed",
-            left: activeCandidate.rect.left,
-            top: activeCandidate.rect.top,
-            width: activeCandidate.rect.width,
-            height: activeCandidate.rect.height,
-            zIndex: 999999,
-            pointerEvents: "none"
-          }}>
-          <Toolbar />
-          <button
-            type="button"
-            className="pointer-events-auto absolute right-2 top-2 rounded bg-zinc-900/90 px-2 py-1 text-xs text-white"
-            onClick={() => setActiveCandidateId(null)}>
-            Close
-          </button>
-          <OverlayCanvas width={activeCandidate.rect.width} height={activeCandidate.rect.height} />
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        zIndex: 2147483647,
+        pointerEvents: "none",
+        background: "rgba(56, 189, 248, 0.08)"
+      }}>
+      <div
+        style={{
+          position: "fixed",
+          top: 12,
+          left: 12,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          background: "rgba(0,0,0,0.9)",
+          color: "#fff",
+          borderRadius: 8,
+          padding: "8px 10px",
+          fontSize: 12,
+          lineHeight: 1.4,
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace"
+        }}>
+        <div className="font-semibold">Overlay Active</div>
+        <div>URL: {window.location.href}</div>
+        <div>
+          Viewport: {viewport.width} × {viewport.height}
         </div>
-      )}
-    </>
+      </div>
+    </div>
   )
 }
 
-export default Overlay
+export default function OverlayEntry() {
+  try {
+    return <DebugOverlay />
+  } catch (error) {
+    console.error("[universal-overlay] react mount/render error", error)
+    return null
+  }
+}
